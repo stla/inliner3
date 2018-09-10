@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 
 module Lib
   where
@@ -77,3 +78,9 @@ extractColumn m j =
 extractColumn' :: MatrixI -> Int -> Int -> Array1dI
 extractColumn' m nrow' j =
   UA.ixmap (0,nrow') (\i -> (i,j)) m
+
+--
+foreign import ccall unsafe "vectorAppend" c_vectorAppend :: SEXP0 -> SEXP0 -> SEXP0
+
+vectorAppend :: SEXP s 'R.Vector -> SEXP s a -> SEXP s 'R.Vector
+vectorAppend list x = sexp (c_vectorAppend (unsexp list) (unsexp x))

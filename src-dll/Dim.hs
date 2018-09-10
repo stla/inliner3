@@ -198,8 +198,8 @@ fidVertex3 _vt1 _p _cc1 _vtsum _u _v _dim _n = do
           -- f _ = 0
           --
           !columns = V.fromList (map (\j -> UA.elems (extractColumn cc1' (checkl''' UV.! j))) [0 .. l-1])
-          assocs = concat [[((i,j),1) | j <- [0 .. l-1], i <- columns V.! j],
-                           [((i,j),0) | j <- [0 .. l-1], i <- [0 .. dim'-1], i `notElem` columns V.! j]]
+          assocs = [((i,j),1) | j <- [0 .. l-1], i <- columns V.! j] ++
+                    [((i,j),0) | j <- [0 .. l-1], i <- [0 .. dim'-1], i `notElem` columns V.! j]
           --vtsum_l = UV.unsafeBackpermute vtsum whichl'''
           --vtsum_ll = UV.unsafeBackpermute vtsum checkl'''
   return $ mkProtectedSEXPVector sing
@@ -219,6 +219,7 @@ fidVertex4 :: SEXP s 'R.Real -> SEXP s 'R.Int
 fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   let p = (VS.!) (VS.unsafeFromSEXP _p) 0
       p' = fromIntegral p :: Int
+      range_p' = [0 .. p'-1]
       u = (VS.!) (VS.unsafeFromSEXP _u) 0
       v = (VS.!) (VS.unsafeFromSEXP _v) 0
       dim = (VS.!) (VS.unsafeFromSEXP _dim) 0
@@ -229,6 +230,7 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
       k = (VS.!) (VS.unsafeFromSEXP _k) 0
       vtsum = VS.unsafeFromSEXP _vtsum
       cc1 = VS.unsafeFromSEXP _cc1
+      vt1 = VS.unsafeFromSEXP _vt1
   -- let whichl = VS.map (>= v) vtsum
   --     whichu = VS.map (<= u) vtsum
   --     both = VS.zipWith (&&) whichl whichu
@@ -241,10 +243,10 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   -- cctemp <- new 0 0 :: IO (IOVector Int32)
   cctemp <- newIORef [] :: IO (IORef [Int32])
   vert <- newIORef 0 :: IO (IORef Int32)
-  when (l>0) $ do
-  -- then int0 UA.// [((i,j),1) | j <- [0 .. l-1], i <- UA.elems (extractColumn cA j)]
-  -- then UA.amap f int0
-    let checkl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) < v]
+  vttemp <- newIORef [] :: IO (IORef [Double])
+  when (l>0) $ do -- && l < p'
+    let checkl_list = [j | j <- range_p', (vtsum VS.! j) < v]
+        checkl = UV.fromList checkl_list
         range_l = [0 .. l-1]
         columns = V.fromList (map (\j -> [cc1 VS.! indexMatrix i (checkl UV.! j) dim' |
                                            i <- range_dim'])
@@ -252,9 +254,10 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
         assocs = [((i,j),1) | j <- range_l, i <- columns V.! j] ++
                  [((i,j),0) | j <- range_l, i <- range_dim, i `notElem` columns V.! j]
         int = UA.array ((0,0),(2*n-1,l-1)) assocs :: UA.UArray (Int32, Int) Int32
-    --vtsum_l = UV.unsafeBackpermute vtsum whichl'''
-    --vtsum_ll = UV.unsafeBackpermute vtsum checkl'''
-        whichl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) >= v]
+        whichl_list = [j | j <- range_p', (vtsum VS.! j) >= v]
+        vtsum_l = UV.fromList [vtsum VS.! j | j <- whichl_list]
+        whichl = UV.fromList whichl_list
+        vtsum_ll = UV.fromList [vtsum VS.! j | j <- checkl_list]
         go :: Int -> IO ()
         go ii | ii == p'-l = return ()
               | otherwise = do
@@ -265,15 +268,22 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                     colSums = map sum int2
                     use = elemIndices (dim-1) colSums
                     len_use = length use
+                    vtsum_l_ii = vtsum_l UV.! ii
+                    vt1_l_ii = [vt1 VS.! indexMatrix i (whichl UV.! ii) dim' | i <- range_dim']
                     inner :: Int -> IO ()
                     inner dd | dd == len_use = return ()
                              | otherwise = do
-                               let xx = elemIndices 1 (int2 !! (use !! dd))
+                               let ddi = use !! dd
+                                   xx = elemIndices 1 (int2 !! ddi)
                                    inter = [cc1 VS.! indexMatrix k whichl_ii dim' |
                                             k <- xx]
                                x <- readIORef cctemp
                                writeIORef cctemp (x ++ inter ++ [k+n])
                                modifyIORef vert (+1)
+                               let lambda = (v - vtsum_l_ii) / ((vtsum_ll UV.! ddi) - vtsum_l_ii)
+                                   vt1_ll_dd = [vt1 VS.! indexMatrix i (checkl UV.! ddi) dim' | i <- range_dim']
+                                   vtnew = zipWith (\a b -> lambda*a + (1-lambda)*b) vt1_ll_dd vt1_l_ii
+                               modifyIORef vttemp (++ vtnew)
                                inner (dd+1)
 
                 -- let int2_col1 = [int UA.! (i,0) |
@@ -287,8 +297,45 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                 inner 0
                 go (ii+1)
     go 0
+  ----
+  let lu = VS.foldl' (\i b -> i + fromEnum (b > u)) 0 vtsum
+  when (lu>0) $ do -- && lu < p'
+    let checku = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) > u]
+        range_lu = [0 .. lu-1]
+        columns = V.fromList (map (\j -> [cc1 VS.! indexMatrix i (checku UV.! j) dim' |
+                                           i <- range_dim'])
+                                   range_lu)
+        assocs = [((i,j),1) | j <- range_lu, i <- columns V.! j] ++
+                 [((i,j),0) | j <- range_lu, i <- range_dim, i `notElem` columns V.! j]
+        int = UA.array ((0,0),(2*n-1,lu-1)) assocs :: UA.UArray (Int32, Int) Int32
+        whichu = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) <= u]
+        go :: Int -> IO ()
+        go ii | ii == p'-lu = return ()
+              | otherwise = do
+                let whichu_ii = whichu UV.! ii
+                    int2 = map (\j -> [int UA.! (i,j) |
+                                       i <- [cc1 VS.! indexMatrix r whichu_ii dim' |
+                                             r <- range_dim']]) range_lu
+                    colSums = map sum int2
+                    use = elemIndices (dim-1) colSums
+                    len_use = length use
+                    inner :: Int -> IO ()
+                    inner dd | dd == len_use = return ()
+                             | otherwise = do
+                               let xx = elemIndices 1 (int2 !! (use !! dd))
+                                   inter = [cc1 VS.! indexMatrix k whichu_ii dim' |
+                                            k <- xx]
+                               x <- readIORef cctemp
+                               writeIORef cctemp (x ++ inter ++ [k])
+                               modifyIORef vert (+1)
+                               inner (dd+1)
+                inner 0
+                go (ii+1)
+    go 0
+  --
   out_cctemp <- readIORef cctemp
   out_vert <- readIORef vert
+  out_vttemp <- readIORef vttemp
   -- out <- UV.unsafeFreeze temp
   -- let out' = UV.toList out
 --       where
@@ -298,6 +345,6 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
 --       --
 --       checkl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) < v]
 
-
-  return $ mkProtectedSEXPVector sing
-    (map (VS.unsafeToSEXP . VS.fromList) [[fromIntegral l], [out_vert], out_cctemp] :: [SEXP s 'R.Int])
+  let out_integerList = mkProtectedSEXPVector sing
+                        (map (VS.unsafeToSEXP . VS.fromList) [[fromIntegral l], [out_vert], out_cctemp] :: [SEXP s 'R.Int])
+  return $ vectorAppend out_integerList ((VS.unsafeToSEXP . VS.fromList) out_vttemp :: SEXP s 'R.Real)
