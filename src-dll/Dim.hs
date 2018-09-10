@@ -25,7 +25,7 @@ import qualified Data.Sequence as S
 import           Data.Vector.Unboxed.Mutable (IOVector, new, unsafeRead,
                                               unsafeWrite)
 import qualified Data.Vector.Unboxed.Mutable as UMV
-import           Data.List (elemIndices)
+import           Data.List (elemIndices, intersect)
 import Data.IORef
 
 foreign export ccall getDim :: SEXP0 -> IO (SEXP s R.Int)
@@ -309,7 +309,7 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
         assocs = [((i,j),1) | j <- range_lu, i <- columns V.! j] ++
                  [((i,j),0) | j <- range_lu, i <- range_dim, i `notElem` columns V.! j]
         int = UA.array ((0,0),(2*n-1,lu-1)) assocs :: UA.UArray (Int32, Int) Int32
-        whichu_list = [j | j <- [0 .. p'-1], (vtsum VS.! j) <= u]
+        whichu_list = [j | j <- range_p', (vtsum VS.! j) <= u]
         vtsum_u = UV.fromList [vtsum VS.! j | j <- whichu_list]
         vtsum_uu = UV.fromList [vtsum VS.! j | j <- checku_list]
         whichu = UV.fromList whichu_list
@@ -341,6 +341,21 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                                modifyIORef vttemp (++ vtnew)
                                inner (dd+1)
                 inner 0
+                go (ii+1)
+    go 0
+  --
+  let which_both = UV.fromList [j | j <- range_p', (vtsum VS.! j) >= v, (vtsum VS.! j) <= u]
+      lb = UV.length which_both
+  when (lb > 0) $ do
+    let go :: Int -> IO ()
+        go ii | ii == lb = return ()
+              | otherwise = do
+                modifyIORef vert (+1)
+                let iii = which_both UV.! ii
+                    cc1_ii = [cc1 VS.! indexMatrix i iii dim' | i <- range_dim']
+                    vt1_ii = [vt1 VS.! indexMatrix i iii dim' | i <- range_dim']
+                modifyIORef cctemp (++ cc1_ii)
+                modifyIORef vttemp (++ vt1_ii)
                 go (ii+1)
     go 0
   --
