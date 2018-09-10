@@ -269,7 +269,7 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                     use = elemIndices (dim-1) colSums
                     len_use = length use
                     vtsum_l_ii = vtsum_l UV.! ii
-                    vt1_l_ii = [vt1 VS.! indexMatrix i (whichl UV.! ii) dim' | i <- range_dim']
+                    vt1_l_ii = [vt1 VS.! indexMatrix i whichl_ii dim' | i <- range_dim']
                     inner :: Int -> IO ()
                     inner dd | dd == len_use = return ()
                              | otherwise = do
@@ -300,7 +300,8 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   ----
   let lu = VS.foldl' (\i b -> i + fromEnum (b > u)) 0 vtsum
   when (lu>0) $ do -- && lu < p'
-    let checku = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) > u]
+    let checku_list = [j | j <- [0 .. p'-1], (vtsum VS.! j) > u]
+        checku = UV.fromList checku_list
         range_lu = [0 .. lu-1]
         columns = V.fromList (map (\j -> [cc1 VS.! indexMatrix i (checku UV.! j) dim' |
                                            i <- range_dim'])
@@ -308,7 +309,10 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
         assocs = [((i,j),1) | j <- range_lu, i <- columns V.! j] ++
                  [((i,j),0) | j <- range_lu, i <- range_dim, i `notElem` columns V.! j]
         int = UA.array ((0,0),(2*n-1,lu-1)) assocs :: UA.UArray (Int32, Int) Int32
-        whichu = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) <= u]
+        whichu_list = [j | j <- [0 .. p'-1], (vtsum VS.! j) <= u]
+        vtsum_u = UV.fromList [vtsum VS.! j | j <- whichu_list]
+        vtsum_uu = UV.fromList [vtsum VS.! j | j <- checku_list]
+        whichu = UV.fromList whichu_list
         go :: Int -> IO ()
         go ii | ii == p'-lu = return ()
               | otherwise = do
@@ -319,15 +323,22 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                     colSums = map sum int2
                     use = elemIndices (dim-1) colSums
                     len_use = length use
+                    vtsum_u_ii = vtsum_u UV.! ii
+                    vt1_u_ii = [vt1 VS.! indexMatrix i whichu_ii dim' | i <- range_dim']
                     inner :: Int -> IO ()
                     inner dd | dd == len_use = return ()
                              | otherwise = do
-                               let xx = elemIndices 1 (int2 !! (use !! dd))
+                               let ddi = use !! dd
+                                   xx = elemIndices 1 (int2 !! ddi)
                                    inter = [cc1 VS.! indexMatrix k whichu_ii dim' |
                                             k <- xx]
                                x <- readIORef cctemp
                                writeIORef cctemp (x ++ inter ++ [k])
                                modifyIORef vert (+1)
+                               let lambda = (u - vtsum_u_ii) / ((vtsum_uu UV.! ddi) - vtsum_u_ii)
+                                   vt1_uu_dd = [vt1 VS.! indexMatrix i (checku UV.! ddi) dim' | i <- range_dim']
+                                   vtnew = zipWith (\a b -> lambda*a + (1-lambda)*b) vt1_uu_dd vt1_u_ii
+                               modifyIORef vttemp (++ vtnew)
                                inner (dd+1)
                 inner 0
                 go (ii+1)
