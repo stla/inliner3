@@ -25,7 +25,8 @@ import qualified Data.Sequence as S
 import           Data.Vector.Unboxed.Mutable (IOVector, new, unsafeRead,
                                               unsafeWrite)
 import qualified Data.Vector.Unboxed.Mutable as UMV
-
+import           Data.List (elemIndices)
+import Data.IORef
 
 foreign export ccall getDim :: SEXP0 -> IO (SEXP s R.Int)
 getDim :: SEXP0 -> IO (SEXP s R.Int)
@@ -209,20 +210,23 @@ foreign export ccall fidVertex4 :: SEXP s 'R.Real -> SEXP s 'R.Int
                                 -> SEXP s 'R.Int -> SEXP s 'R.Real
                                 -> SEXP s 'R.Real -> SEXP s 'R.Real
                                 -> SEXP s 'R.Int -> SEXP s 'R.Int
-                                -> IO (SEXP s R.Vector)
+                                -> SEXP s 'R.Int -> IO (SEXP s R.Vector)
 fidVertex4 :: SEXP s 'R.Real -> SEXP s 'R.Int
            -> SEXP s 'R.Int -> SEXP s 'R.Real
            -> SEXP s 'R.Real -> SEXP s 'R.Real
-           -> SEXP s 'R.Int -> SEXP s 'R.Int
+           -> SEXP s 'R.Int -> SEXP s 'R.Int -> SEXP s 'R.Int
            -> IO (SEXP s R.Vector)
-fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n = do
+fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   let p = (VS.!) (VS.unsafeFromSEXP _p) 0
       p' = fromIntegral p :: Int
       u = (VS.!) (VS.unsafeFromSEXP _u) 0
       v = (VS.!) (VS.unsafeFromSEXP _v) 0
       dim = (VS.!) (VS.unsafeFromSEXP _dim) 0
       dim' = fromIntegral dim :: Int
+      range_dim = [0 .. dim - 1]
+      range_dim' = [0 .. dim' - 1]
       n = (VS.!) (VS.unsafeFromSEXP _n) 0
+      k = (VS.!) (VS.unsafeFromSEXP _k) 0
       vtsum = VS.unsafeFromSEXP _vtsum
       cc1 = VS.unsafeFromSEXP _cc1
   -- let whichl = VS.map (>= v) vtsum
@@ -233,36 +237,60 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n = do
       -- !cA = subsetColumns cc1' checkl'''
       -- cB = subsetColumns cc1' whichl'''
       l = VS.foldl' (\i b -> i + fromEnum (b < v)) 0 vtsum
-  temp <- UMV.replicate dim' 0 :: IO (IOVector Int32)
+  -- temp <- UMV.replicate dim' 0 :: IO (IOVector Int32)
+  -- cctemp <- new 0 0 :: IO (IOVector Int32)
+  cctemp <- newIORef [] :: IO (IORef [Int32])
+  vert <- newIORef 0 :: IO (IORef Int32)
   when (l>0) $ do
-    -- then int0 UA.// [((i,j),1) | j <- [0 .. l-1], i <- UA.elems (extractColumn cA j)]
-    -- then UA.amap f int0
-      let checkl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) < v]
-          columns = V.fromList (map (\j -> [cc1 VS.! indexMatrix i (checkl UV.! j) dim' |
-                                             i <- [0 .. dim' - 1]])
-                                     [0 .. l-1])
-          assocs = [((i,j),1) | j <- [0 .. l-1], i <- columns V.! j] ++
-                   [((i,j),0) | j <- [0 .. l-1], i <- [0 .. dim-1], i `notElem` columns V.! j]
-          int = UA.array ((0,0),(2*n-1,l-1)) assocs :: UA.UArray (Int32, Int) Int32
-      --vtsum_l = UV.unsafeBackpermute vtsum whichl'''
-      --vtsum_ll = UV.unsafeBackpermute vtsum checkl'''
-          whichl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) >= v]
-          go :: Int -> IO ()
-          go ii | ii == p'-l = return ()
-                | otherwise = do
-                  let int2_col1 = [int UA.! (i,0) |
-                                   i <- [cc1 VS.! indexMatrix k (whichl UV.! ii) dim' |
-                                         k <- [0 .. dim' - 1]]]
-                      inner :: Int -> IO ()
-                      inner kk | kk == dim' = return ()
-                               | otherwise = do
-                                 UMV.unsafeWrite temp kk (int2_col1 !! kk)
-                                 inner (kk+1)
-                  inner 0
-                  go (ii+1)
-      go 0
-  out <- UV.unsafeFreeze temp
-  let out' = UV.toList out
+  -- then int0 UA.// [((i,j),1) | j <- [0 .. l-1], i <- UA.elems (extractColumn cA j)]
+  -- then UA.amap f int0
+    let checkl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) < v]
+        range_l = [0 .. l-1]
+        columns = V.fromList (map (\j -> [cc1 VS.! indexMatrix i (checkl UV.! j) dim' |
+                                           i <- range_dim'])
+                                   range_l)
+        assocs = [((i,j),1) | j <- range_l, i <- columns V.! j] ++
+                 [((i,j),0) | j <- range_l, i <- range_dim, i `notElem` columns V.! j]
+        int = UA.array ((0,0),(2*n-1,l-1)) assocs :: UA.UArray (Int32, Int) Int32
+    --vtsum_l = UV.unsafeBackpermute vtsum whichl'''
+    --vtsum_ll = UV.unsafeBackpermute vtsum checkl'''
+        whichl = UV.fromList [j | j <- [0 .. p'-1], (vtsum VS.! j) >= v]
+        go :: Int -> IO ()
+        go ii | ii == p'-l = return ()
+              | otherwise = do
+                let whichl_ii = whichl UV.! ii
+                    int2 = map (\j -> [int UA.! (i,j) |
+                                       i <- [cc1 VS.! indexMatrix r whichl_ii dim' |
+                                             r <- range_dim']]) range_l
+                    colSums = map sum int2
+                    use = elemIndices (dim-1) colSums
+                    len_use = length use
+                    inner :: Int -> IO ()
+                    inner dd | dd == len_use = return ()
+                             | otherwise = do
+                               let xx = elemIndices 1 (int2 !! (use !! dd))
+                                   inter = [cc1 VS.! indexMatrix k whichl_ii dim' |
+                                            k <- xx]
+                               x <- readIORef cctemp
+                               writeIORef cctemp (x ++ inter ++ [k+n])
+                               modifyIORef vert (+1)
+                               inner (dd+1)
+
+                -- let int2_col1 = [int UA.! (i,0) |
+                --                  i <- [cc1 VS.! indexMatrix k (whichl UV.! ii) dim' |
+                --                        k <- [0 .. dim' - 1]]]
+                    -- inner :: Int -> IO ()
+                    -- inner kk | kk == dim' = return ()
+                    --          | otherwise = do
+                    --            unsafeWrite temp kk (int2_col1 !! kk)
+                    --            inner (kk+1)
+                inner 0
+                go (ii+1)
+    go 0
+  out_cctemp <- readIORef cctemp
+  out_vert <- readIORef vert
+  -- out <- UV.unsafeFreeze temp
+  -- let out' = UV.toList out
 --       where
 --       -- int0 = UA.listArray ((0,0),(2*n'-1,l-1)) (replicate (2*n*l) (0::Int32)) :: UA.UArray (Int32, Int) Int32
 -- --          columns = V.fromList (map (\j -> map fromIntegral (UA.elems (extractColumn cA j))) [0 .. l-1])
@@ -272,4 +300,4 @@ fidVertex4 _vt1 _p _cc1 _vtsum _u _v _dim _n = do
 
 
   return $ mkProtectedSEXPVector sing
-    (map (VS.unsafeToSEXP . VS.fromList) [[fromIntegral l], out'] :: [SEXP s 'R.Int])
+    (map (VS.unsafeToSEXP . VS.fromList) [[fromIntegral l], [out_vert], out_cctemp] :: [SEXP s 'R.Int])
