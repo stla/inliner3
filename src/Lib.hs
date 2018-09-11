@@ -51,6 +51,9 @@ sexpToIntegerVector vectorR = do
 indexMatrix :: Int -> Int -> Int -> Int
 indexMatrix i j nrow = j*nrow + i
 
+ij2k :: Int -> Int -> Int -> Int
+ij2k = indexMatrix
+
 indexMatrix' :: Int -> Int -> (Int,Int)
 indexMatrix' = divMod -- k nrow
 
@@ -79,8 +82,43 @@ extractColumn' :: MatrixI -> Int -> Int -> Array1dI
 extractColumn' m nrow' j =
   UA.ixmap (0,nrow') (\i -> (i,j)) m
 
+inInterval :: Ord a => a -> (a,a) -> Bool
+inInterval x (l,u) = (x >= l) && (x <= u)
+
 --
 foreign import ccall unsafe "vectorAppend" c_vectorAppend :: SEXP0 -> SEXP0 -> SEXP0
 
 vectorAppend :: SEXP s 'R.Vector -> SEXP s a -> SEXP s 'R.Vector
 vectorAppend list x = sexp (c_vectorAppend (unsexp list) (unsexp x))
+
+foreign import ccall unsafe "realToSEXP" c_realToSEXP :: CInt -> Ptr CDouble -> SEXP0
+
+realToSEXP :: [Double] -> IO (SEXP s 'R.Real)
+realToSEXP list =
+  SV.unsafeWith
+    (SV.fromList (map realToFrac list :: [CDouble]))
+      (return . sexp . c_realToSEXP (fromIntegral (length list)))
+
+realToSEXP' :: SV.Vector Double -> IO (SEXP s 'R.Real)
+realToSEXP' v =
+  SV.unsafeWith
+    (SV.map realToFrac v :: SV.Vector CDouble)
+      (return . sexp . c_realToSEXP (fromIntegral (SV.length v)))
+
+u2s :: UV.Vector Double -> SV.Vector Double
+u2s = UV.convert
+
+realToSEXP'' :: UV.Vector Double -> IO (SEXP s 'R.Real)
+realToSEXP'' v =
+  SV.unsafeWith
+    (SV.map realToFrac (u2s v) :: SV.Vector CDouble)
+      (return . sexp . c_realToSEXP (fromIntegral (UV.length v)))
+
+-- integer to sexp
+foreign import ccall unsafe "intToSEXP" c_intToSEXP :: CInt -> Ptr CInt -> SEXP0
+
+intToSEXP' :: SV.Vector Int32 -> IO (SEXP s 'R.Real)
+intToSEXP' v =
+  SV.unsafeWith
+    (SV.map fromIntegral v :: SV.Vector CInt)
+      (return . sexp . c_intToSEXP (fromIntegral (SV.length v)))
