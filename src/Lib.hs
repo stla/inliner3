@@ -132,3 +132,10 @@ listOfNames names = do
   sexpstrings <- mapM (\x -> withCString x R.mkString) names :: IO [SEXP V 'R.String]
   let list = mkProtectedSEXPVector sing sexpstrings
   return list
+
+--
+foreign import ccall unsafe "setDim" c_setDim :: SEXP0 -> CInt -> CInt -> IO ()
+
+setDim :: SEXP s a -> Int32 -> Int32 -> IO ()
+setDim v nrow ncol =
+  c_setDim (unsexp v) (fromIntegral nrow) (fromIntegral ncol)

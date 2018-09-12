@@ -29,3 +29,11 @@ SEXP intToSEXP (int n, int *arr){
     UNPROTECT(1);
     return Rval;
 }
+
+void setDim(SEXP v, int nrow, int ncol){
+  SEXP dim;
+  PROTECT(dim = allocVector(INTSXP, 2));
+  INTEGER(dim)[0] = nrow; INTEGER(dim)[1] = ncol;
+  setAttrib(v, R_DimSymbol, dim);
+  UNPROTECT(1);
+}

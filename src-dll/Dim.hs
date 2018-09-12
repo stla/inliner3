@@ -486,7 +486,7 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   cctemp <- newIORef SV.empty :: IO (IORef (SV.Vector Int32))
   vert <- newIORef 0 :: IO (IORef Int32)
   vttemp <- newIORef SV.empty :: IO (IORef (SV.Vector Double))
-  when (l>0) $ do -- && l < p'
+  when (l>0 && l < p') $ do
     let checkl_list = [j | j <- range_p', (vtsum VS.! j) < v]
         checkl = UV.fromList checkl_list
         range_l = [0 .. l-1]
@@ -538,7 +538,7 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
     go 0
   ----
   let lu = VS.foldl' (\i b -> i + fromEnum (b > u)) 0 vtsum
-  when (lu>0) $ do -- && lu < p'
+  when (lu>0 && lu < p') $ do
     let checku_list = [j | j <- [0 .. p'-1], (vtsum VS.! j) > u]
         checku = UV.fromList checku_list
         range_lu = [0 .. lu-1]
@@ -566,8 +566,9 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                     use = elemIndices (dim-1) colSums
                     len_use = length use
                     vtsum_u_ii = vtsum_u UV.! ii
-                    vt1_u_ii = SV.fromList [vt1 VS.! indexMatrix i whichu_ii dim' |
-                                i <- range_dim']
+                    vt1_u_ii = SV.fromList
+                                [vt1 VS.! indexMatrix i whichu_ii dim' |
+                                 i <- range_dim']
                     inner :: Int -> IO ()
                     inner dd | dd == len_use = return ()
                              | otherwise = do
@@ -575,15 +576,14 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                                    ddii = checku UV.! ddi
                                    inter = [cc1 VS.! ij2k k whichu_ii dim' |
                                             k <- elemIndices 1 (int2 !! ddi)]
---                               x <- readIORef cctemp
                                    ccnew = SV.snoc (SV.fromList inter) k
---                               writeIORef cctemp (x ++ inter ++ [k])
                                modifyIORef cctemp (SV.++ ccnew)
                                modifyIORef vert (+1)
                                let lambda = (u - vtsum_u_ii) /
                                             ((vtsum_uu UV.! ddi) - vtsum_u_ii)
-                                   vt1_uu_dd = SV.fromList [vt1 VS.! ij2k i ddii dim' |
-                                                i <- range_dim']
+                                   vt1_uu_dd = SV.fromList
+                                                  [vt1 VS.! ij2k i ddii dim' |
+                                                   i <- range_dim']
                                    vtnew = SV.zipWith
                                            (\a b -> lambda*a + (1-lambda)*b)
                                            vt1_uu_dd vt1_u_ii
@@ -614,6 +614,8 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   out_vttemp <- readIORef vttemp
   out_vttemp' <- realToSEXP' out_vttemp
   out_cctemp' <- intToSEXP' out_cctemp
+  setDim out_vttemp' dim out_vert
+  setDim out_cctemp' dim out_vert
   let out_integerList = mkProtectedSEXPVector sing
                         (map (VS.unsafeToSEXP . VS.fromList)
                              [[fromIntegral l], [out_vert]] :: [SEXP s 'R.Int])
