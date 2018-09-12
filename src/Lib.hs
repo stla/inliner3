@@ -95,6 +95,11 @@ foreign import ccall unsafe "vectorAppend" c_vectorAppend :: SEXP0 -> SEXP0 -> S
 vectorAppend :: SEXP s 'R.Vector -> SEXP s a -> SEXP s 'R.Vector
 vectorAppend list x = sexp (c_vectorAppend (unsexp list) (unsexp x))
 
+foreign import ccall unsafe "toList" c_toList :: SEXP0 -> SEXP0
+
+toList :: SEXP s a -> SEXP s 'R.Vector
+toList x = sexp (c_toList (unsexp x))
+
 foreign import ccall unsafe "realToSEXP" c_realToSEXP :: CInt -> Ptr CDouble -> SEXP0
 
 realToSEXP :: [Double] -> IO (SEXP s 'R.Real)
@@ -121,11 +126,17 @@ realToSEXP'' v =
 -- integer to sexp
 foreign import ccall unsafe "intToSEXP" c_intToSEXP :: CInt -> Ptr CInt -> SEXP0
 
-intToSEXP' :: SV.Vector Int32 -> IO (SEXP s 'R.Real)
+intToSEXP' :: SV.Vector Int32 -> IO (SEXP s 'R.Int)
 intToSEXP' v =
   SV.unsafeWith
     (SV.map fromIntegral v :: SV.Vector CInt)
       (return . sexp . c_intToSEXP (fromIntegral (SV.length v)))
+
+intToSEXP :: [Int32] -> IO (SEXP s 'R.Int)
+intToSEXP list =
+  SV.unsafeWith
+    (SV.fromList (map fromIntegral list :: [CInt]))
+      (return . sexp . c_intToSEXP (fromIntegral (length list)))
 
 listOfNames :: [String] -> IO (SEXP V 'R.Vector)
 listOfNames names = do

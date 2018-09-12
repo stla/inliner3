@@ -612,11 +612,13 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   out_cctemp <- readIORef cctemp
   out_vert <- readIORef vert
   out_vttemp <- readIORef vttemp
+  out_vert' <- intToSEXP [out_vert]
   out_vttemp' <- realToSEXP' out_vttemp
   out_cctemp' <- intToSEXP' out_cctemp
   setDim out_vttemp' dim out_vert
   setDim out_cctemp' dim out_vert
-  let out_integerList = mkProtectedSEXPVector sing
-                        (map (VS.unsafeToSEXP . VS.fromList)
-                             [[fromIntegral l], [out_vert]] :: [SEXP s 'R.Int])
-  return $ vectorAppend (vectorAppend out_integerList out_vttemp') out_cctemp'
+  -- let out_integerList = mkProtectedSEXPVector sing
+  --                       (map (VS.unsafeToSEXP . VS.fromList)
+  --                            [[fromIntegral l], [out_vert]] :: [SEXP s 'R.Int])
+  -- return $ vectorAppend (vectorAppend out_integerList out_vttemp') out_cctemp'
+  return $ vectorAppend (vectorAppend (toList out_vert') out_vttemp') out_cctemp'

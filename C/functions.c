@@ -1,6 +1,14 @@
 #include <R.h>
 #include <Rinternals.h>
 
+SEXP toList(SEXP x) {
+  SEXP new;
+  PROTECT(new=allocVector(VECSXP, 1));
+  SET_VECTOR_ELT(new, 0, x);
+  UNPROTECT(1);
+  return new;
+}
+
 SEXP vectorAppend(SEXP list, SEXP x) {
   SEXP new; int i;
   int n = length(list);
