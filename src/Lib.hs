@@ -6,7 +6,7 @@ module Lib
 import           Foreign              (Int32, Ptr, castPtr, newForeignPtr_,
                                        peekArray)
 import           Foreign.C
--- import           Foreign.C.String              (peekCString)
+import           Foreign.C.String              (withCString)
 import           Data.Array           (Array, array, bounds, ixmap)
 import qualified Data.Array           as A
 import           Data.Array.Unboxed   (UArray)
@@ -16,6 +16,10 @@ import qualified Data.Vector.Storable as SV
 import qualified Data.Vector.Unboxed  as UV
 import           Foreign.R            (SEXP, SEXP0, sexp, unsexp)
 import qualified Foreign.R            as R
+import           Data.Singletons      (sing)
+import           Control.Memory.Region (V)
+import           Language.R.Literal   (mkProtectedSEXPVector)
+
 
 type MatrixI = UArray (Int, Int) Int32
 type Array1dI = UArray Int Int32
@@ -122,3 +126,9 @@ intToSEXP' v =
   SV.unsafeWith
     (SV.map fromIntegral v :: SV.Vector CInt)
       (return . sexp . c_intToSEXP (fromIntegral (SV.length v)))
+
+listOfNames :: [String] -> IO (SEXP V 'R.Vector)
+listOfNames names = do
+  sexpstrings <- mapM (\x -> withCString x R.mkString) names :: IO [SEXP V 'R.String]
+  let list = mkProtectedSEXPVector sing sexpstrings
+  return list

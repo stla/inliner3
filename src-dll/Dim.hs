@@ -15,6 +15,7 @@ import qualified Data.Vector.Storable as SV
 import qualified Data.Vector.Unboxed  as UV
 import           Foreign
 import           Foreign.C
+import           Foreign.C.String
 import           Foreign.R            (SEXP, SEXP0, SomeSEXP)
 import qualified Foreign.R            as R
 import           Foreign.R.Internal   (somesexp)
@@ -482,7 +483,7 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
       cc1 = VS.unsafeFromSEXP _cc1
       vt1 = VS.unsafeFromSEXP _vt1
       l = VS.foldl' (\i b -> i + fromEnum (b < v)) 0 vtsum
-  cctemp <- newIORef [] :: IO (IORef [Int32])
+  cctemp <- newIORef SV.empty :: IO (IORef (SV.Vector Int32))
   vert <- newIORef 0 :: IO (IORef Int32)
   vttemp <- newIORef SV.empty :: IO (IORef (SV.Vector Double))
   when (l>0) $ do -- && l < p'
@@ -520,7 +521,8 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                                    ddii = checkl UV.! ddi
                                    inter = [cc1 VS.! indexMatrix k iii dim' |
                                             k <- elemIndices 1 (int2 !! ddi)]
-                               modifyIORef cctemp (++ inter ++ [k+n])
+                                   ccnew = SV.snoc (SV.fromList inter) (k+n)
+                               modifyIORef cctemp (SV.++ ccnew)
                                modifyIORef vert (+1)
                                let lambda = (v - vtsum_l_ii) /
                                             ((vtsum_ll UV.! ddi) - vtsum_l_ii)
@@ -573,8 +575,10 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                                    ddii = checku UV.! ddi
                                    inter = [cc1 VS.! ij2k k whichu_ii dim' |
                                             k <- elemIndices 1 (int2 !! ddi)]
-                               x <- readIORef cctemp
-                               writeIORef cctemp (x ++ inter ++ [k])
+--                               x <- readIORef cctemp
+                                   ccnew = SV.snoc (SV.fromList inter) k
+--                               writeIORef cctemp (x ++ inter ++ [k])
+                               modifyIORef cctemp (SV.++ ccnew)
                                modifyIORef vert (+1)
                                let lambda = (u - vtsum_u_ii) /
                                             ((vtsum_uu UV.! ddi) - vtsum_u_ii)
@@ -600,7 +604,7 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
                 let iii = which_both UV.! ii
                     cc1_ii = [cc1 VS.! indexMatrix i iii dim' | i <- range_dim']
                     vt1_ii = [vt1 VS.! indexMatrix i iii dim' | i <- range_dim']
-                modifyIORef cctemp (++ cc1_ii)
+                modifyIORef cctemp (SV.++ SV.fromList cc1_ii)
                 modifyIORef vttemp (SV.++ SV.fromList vt1_ii)
                 go (ii+1)
     go 0
@@ -609,7 +613,7 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   out_vert <- readIORef vert
   out_vttemp <- readIORef vttemp
   out_vttemp' <- realToSEXP' out_vttemp
-  out_cctemp' <- intToSEXP' (SV.fromList out_cctemp)
+  out_cctemp' <- intToSEXP' out_cctemp
   let out_integerList = mkProtectedSEXPVector sing
                         (map (VS.unsafeToSEXP . VS.fromList)
                              [[fromIntegral l], [out_vert]] :: [SEXP s 'R.Int])
