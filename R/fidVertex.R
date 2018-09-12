@@ -1,4 +1,5 @@
 dll <- "C:/HaskellProjects/inliner3/.stack-work/install/b7328101/lib/inliner3.dll"
+#dll <- "C:/HaskellProjects/inliner3/mydll.dll"
 dyn.load(dll)
 .C("HsStart")
 set.seed(123) # 3141592 for p=128 - not sure
@@ -17,8 +18,8 @@ k <- 1L
 f <- function(vt1, p, cc1, vtsum, U, L, Dim, n, k){
   h <- .Call("fidVertex5", vt1, p, cc1, vtsum, U, L, Dim, n, k)
   list(
-    CCtemp = matrix(h[[4L]], nrow=3L), 
-    VTtemp = matrix(h[[3L]], nrow=3L)
+    CCtemp = matrix(h[[3L]], nrow=Dim), 
+    VTtemp = matrix(h[[2L]], nrow=Dim)
   )
 }
 
@@ -48,8 +49,8 @@ microbenchmark(
   H4 = .Call("fidVertex4", c(vt1), p, c(cc1)-1L, vtsum, U, L, 3L, 3L*p, k-1L),
   H5 = .Call("fidVertex5", c(vt1), p, c(cc1)-1L, vtsum, U, L, 3L, 3L*p, k-1L),
   H = .Call("fidVertex5", vt1, p, cc1, vtsum, U, L, 3L, 3L*p, k),
-  f = f(vt1, p, cc1, vtsum, U, L, Dim=3L, n=3L*p, k),
-  ff = ff(vt1, p, cc1, vtsum, U, L, Dim=3L, n=3L*p, k),
+  # f = f(vt1, p, cc1, vtsum, U, L, Dim=3L, n=3L*p, k),
+  # ff = ff(vt1, p, cc1, vtsum, U, L, Dim=3L, n=3L*p, k),
   times = 500
 )
 
@@ -75,4 +76,19 @@ microbenchmark(
   matrix = matrix(x, nrow=3L),
   dim = {dim(x) <- c(3L, 100L)},
   times=500
+)
+
+##############
+loop <- function(n){
+  x <- 0L
+  for(i in 1:n){
+    x <- x+1L
+  }
+  return(x)
+}
+n <- 100000L
+microbenchmark(
+  R = loop(n),
+  H = .Call("loop", n),
+  times = 200
 )

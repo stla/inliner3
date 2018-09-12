@@ -598,7 +598,7 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
       lb = UV.length which_both
   when (lb > 0) $ do
     let go :: Int -> IO ()
-        go ii | ii == lb = return ()
+        go ii | ii == lb = return () -- TODO: inverser?
               | otherwise = do
                 modifyIORef vert (+1)
                 let iii = which_both UV.! ii
@@ -622,3 +622,17 @@ fidVertex5 _vt1 _p _cc1 _vtsum _u _v _dim _n _k = do
   --                            [[fromIntegral l], [out_vert]] :: [SEXP s 'R.Int])
   -- return $ vectorAppend (vectorAppend out_integerList out_vttemp') out_cctemp'
   return $ vectorAppend (vectorAppend (toList out_vert') out_vttemp') out_cctemp'
+
+foreign export ccall loop :: SEXP s R.Int -> IO (SEXP s R.Int)
+loop :: SEXP s R.Int -> IO (SEXP s R.Int)
+loop n = do
+  let n' = (VS.!) (VS.unsafeFromSEXP n) 0
+  -- x <- newIORef 0 :: IO (IORef Int32)
+  let go :: Int32 -> Int32 -> IO Int32
+      go i !x | i < n' = go (i+1) (x+1)
+           -- modifyIORef x (+1)
+                -- go (i+1) (x+1)
+              | otherwise = return x
+  x <- go 0 0
+  let x' = VS.singleton x
+  return $ VS.unsafeToSEXP x'
