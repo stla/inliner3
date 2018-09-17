@@ -29,6 +29,8 @@ import           Data.Vector.Unboxed.Mutable (IOVector, new, unsafeRead,
 import qualified Data.Vector.Unboxed.Mutable as UMV
 import           Data.List (elemIndices, intersect)
 import Data.IORef
+import Data.STRef
+import Control.Monad.ST
 
 foreign export ccall getDim :: SEXP0 -> IO (SEXP s R.Int)
 getDim :: SEXP0 -> IO (SEXP s R.Int)
@@ -636,6 +638,37 @@ loop n = do
   x <- go 0 0
   let x' = VS.singleton x
   return $ VS.unsafeToSEXP x'
+
+foreign export ccall loop2 :: SEXP s R.Int -> IO (SEXP s R.Int)
+loop2 :: SEXP s R.Int -> IO (SEXP s R.Int)
+loop2 n = do
+  let n' = (VS.!) (VS.unsafeFromSEXP n) 0
+      x = runST (do
+          ref <- newSTRef (0::Int32)
+--          let go :: Int32 -> ST s2 ()
+          let  go i | i < n' = do
+                     modifySTRef' ref (+1)
+                     go (i+1)
+                    | otherwise = return ()
+          go 0
+          readSTRef ref)
+  let x' = VS.singleton x
+  return $ VS.unsafeToSEXP x'
+
+foreign export ccall loop3 :: SEXP s R.Int -> IO (SEXP s R.Int)
+loop3 :: SEXP s R.Int -> IO (SEXP s R.Int)
+loop3 n = do
+  let n' = (VS.!) (VS.unsafeFromSEXP n) 0
+  x <- newIORef 0 :: IO (IORef Int32)
+  let go :: Int32 -> IO ()
+      go i | i < n' = do
+             modifyIORef x (+1)
+             go (i+1)
+           | otherwise = return ()
+  go 0
+  x' <- readIORef x
+  let x'' = VS.singleton x'
+  return $ VS.unsafeToSEXP x''
 
 --
 foreign export ccall fidVertex6 :: SEXP s 'R.Real -> SEXP s 'R.Int
